@@ -1,12 +1,14 @@
 <html>
     <head>
         <meta charset='UTF-8'></meta>
-        <link rel='stylesheet', href='./reset.css'>
-        <link rel='stylesheet', href='../node_modules/element-ui/lib/theme-chalk/index.css'>
+        <link rel='stylesheet' href='./reset.css'/>
+        <link rel='stylesheet' href='../node_modules/element-ui/lib/theme-chalk/index.css'/>
+        <link rel='stylesheet' href='../node_modules/monaco-editor/min/vs/editor/editor.main.css'/>
         <style>
             #app {
                 padding: 10px;
             }
+
             .line2 {
                 overflow: hidden;
                 text-overflow: ellipsis;
@@ -14,6 +16,47 @@
                 display: -webkit-box;
                 -webkit-line-clamp: 2;
                 -webkit-box-orient: vertical;
+            }
+
+            .mask_layout{
+                z-index: 2000;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(0, 0, 0, 0.6);
+            }
+                
+            .animation-right-enter{
+                min-width: 200px;
+                background: white;
+                position: fixed;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                max-width: 100%;
+                z-index: 2001;
+                transform: translate3d(100%, 0, 0);
+                /* transition: .3s transform cubic-bezier(0.075, 0.82, 0.165, 1); // quick */
+                transition: .3s transform cubic-bezier(0.12, 0.4, 0.28, 1.23), .3s opacity; 
+                opacity: 0;
+            }
+            .animation-right-enter::after{
+                content: '';
+                display: inline-block;
+                position: absolute;
+                right: 0;
+                transform: translate3d(100%, 0, 0);
+                width: 100px;
+                top: 0;
+                bottom: 0;
+                background: white;
+            }
+            
+            .animation-right-enter.active{
+                transform: translate3d(0, 0, 0);
+                opacity: 1;
             }
         </style>
     </head>
@@ -26,6 +69,7 @@
                             <el-input v-model="item.tableSearch[key]"></el-input>
                         </el-form-item>
                         <el-form-item>
+                            <el-button @click="rightPanel = true">过滤</el-button>
                             <el-button @click="item.reLoad">查询</el-button>
                         </el-form-item>
                     </el-form>
@@ -42,15 +86,21 @@
                     <el-pagination v-if="item.filterd.length > item.pageSize" style="text-align: center" @size-change="item.onSizeChange" @current-change="item.onCurrentChange" :current-page.sync="item.viewPage" :page-sizes="[10, 20, 30, 40]" :page-size="item.pageSize" layout="total, sizes, prev, pager, next, jumper" :total="item.filterd.length"></el-pagination>
                 </el-tab-pane>
             </el-tabs>
+            <div class="mask_layout" v-show="rightPanel" @click="rightPanel = false"></div>
+            <div class="animation-right-enter" :class="rightPanel && 'active'">
+                <div id="editor"></div>
+            </div>
         </div>
         <script src='../node_modules/vue/dist/vue.min.js'></script>
         <script src='../node_modules/element-ui/lib/index.js'></script>
+        <script src='../node_modules/monaco-editor/min/vs/loader.js'></script>
         <script>
             new Vue({
                 el: "#app",
                 data() {
                     return {
-                        list: {}
+                        list: {},
+                        rightPanel: false
                     }
                 },
                 computed: {
@@ -100,27 +150,55 @@
                     }
                 },
                 mounted() {
-                    const self = this
-                    const ws = new WebSocket('ws://127.0.0.1:3000');
-                    ws.onopen = function(e) {
-                        console.log("连接成功!");
-                    };
-                    ws.onerror = function(e) {
-                        console.error("连接失败!", e);
-                    }
-                    ws.onclose = function(e) {};
-                    ws.onmessage = function(e) {
-                        let message = JSON.parse(e.data);
-                        console.log(`收到消息： `,message)
-                        if (message.type == 'list') {
-                            self.list = message.data
-                            self.$nextTick(()=>{
-                                console.log(self.tabs)
-                            })
-                        }
-                    }
+                    this.initWebsocket()
                 },
                 methods: {
+                    initWebsocket () {
+                        const self = this
+                        const ws = new WebSocket('ws://127.0.0.1:3000');
+                        ws.onopen = function(e) {
+                            console.log("连接成功!");
+                        };
+                        ws.onerror = function(e) {
+                            console.error("连接失败!", e);
+                        }
+                        ws.onclose = function(e) {};
+                        ws.onmessage = function(e) {
+                            let message = JSON.parse(e.data);
+                            console.log(`收到消息： `,message)
+                            if (message.type == 'list') {
+                                self.list = message.data
+                                self.$nextTick(()=>{
+                                    console.log(self.tabs)
+                                })
+                            }
+                        }
+                    },
+                    initEditor () {
+                        require.config({
+                          paths: {
+                            'vs': '/monaco-editor/min/vs'
+                          }
+                        });
+                        require(['vs/editor/editor.main'], function() {
+                          const editor = self.editor = monaco.editor.create(document.getElementById('editor'), {
+                            theme: 'vs-dark',
+                            automaticLayout: true,
+                            language: 'javascript',
+                            value: [
+                              'function sort() {',
+                              '\t',
+                              '}'
+                            ].join('\n')
+                          });
+                          editor.onKeyDown(e => {
+                            if (e.ctrlKey && e.keyCode == 49) {
+                              e.preventDefault();
+                              consle.log("keep", editor.getValue())
+                            }
+                          })
+                        });
+                    }
                 }
             })
         </script>
