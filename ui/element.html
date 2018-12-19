@@ -29,7 +29,7 @@
             }
                 
             .animation-right-enter{
-                min-width: 200px;
+                min-width: 60%;
                 background: white;
                 position: fixed;
                 right: 0;
@@ -51,7 +51,7 @@
                 width: 100px;
                 top: 0;
                 bottom: 0;
-                background: white;
+                background: #333;
             }
             
             .animation-right-enter.active{
@@ -69,7 +69,7 @@
                             <el-input v-model="item.tableSearch[key]"></el-input>
                         </el-form-item>
                         <el-form-item>
-                            <el-button @click="rightPanel = true">过滤</el-button>
+                            <el-button @click="rightPanel = item">排序</el-button>
                             <el-button @click="item.reLoad">查询</el-button>
                         </el-form-item>
                     </el-form>
@@ -88,7 +88,7 @@
             </el-tabs>
             <div class="mask_layout" v-show="rightPanel" @click="rightPanel = false"></div>
             <div class="animation-right-enter" :class="rightPanel && 'active'">
-                <div id="editor"></div>
+                <div id="editor" style="height: 100%"></div>
             </div>
         </div>
         <script src='../node_modules/vue/dist/vue.min.js'></script>
@@ -151,6 +151,7 @@
                 },
                 mounted() {
                     this.initWebsocket()
+                    this.initEditor()
                 },
                 methods: {
                     initWebsocket () {
@@ -175,9 +176,10 @@
                         }
                     },
                     initEditor () {
+                        const self = this
                         require.config({
                           paths: {
-                            'vs': '/monaco-editor/min/vs'
+                            'vs': '../node_modules/monaco-editor/min/vs'
                           }
                         });
                         require(['vs/editor/editor.main'], function() {
@@ -186,15 +188,22 @@
                             automaticLayout: true,
                             language: 'javascript',
                             value: [
-                              'function sort() {',
-                              '\t',
+                              'function sort(a,b) {',
+                              '\treturn a.$url.length - b.$url.length',
                               '}'
                             ].join('\n')
                           });
                           editor.onKeyDown(e => {
                             if (e.ctrlKey && e.keyCode == 49) {
                               e.preventDefault();
-                              consle.log("keep", editor.getValue())
+                              try {
+                                const _sort = eval(`${editor.getValue()}`)
+                                self.rightPanel.total = self.rightPanel.total.sort(sort)
+                                self.rightPanel.reLoad()
+                              } catch (e) {
+                                    console.error(e)
+                                    self.$notify({ type: "error", message: e.message })
+                              }
                             }
                           })
                         });
