@@ -11,25 +11,42 @@ const ws = require("ws").Server
 const opn = require("opn")
 const allSpiders = []
 const result = {}
+let lastContext
 let browser
 let options = {} 
 
-const wsSet = new Set()
-const wss = new ws({
-    port: 3000 // 可以与web服务器端口一样 
-});
+let initWss = (()=>{
+    const wsSet = new Set()
+    let wss
+    return function () {
+        if (!wss) {
+            wss = new ws({
+                port: 3000 // 可以与web服务器端口一样 
+            });
+            wss.on("error", (...params) => {
+                wss = null
+                console.log(...params)
+            });
+            wss.on("close", () => {
+                wss = null
+            });
+            wss.on('connection', function connection(ws) {
+                wsSet.add(ws)
+                ws.on("error", console.error)
+                ws.on('message', data => {
+                    const message = JSON.parse(data);
+                })
+                ws.send(JSON.stringify({ type: 'list', data: result }))
+            })
+            process.on("exit", ()=> wss && wss.close())
+        }
+        return wss
+    }
+})();
 
-wss.on("error", console.error);
-wss.on('connection', function connection(ws) {
-    wsSet.add(ws)
-    ws.on("error", console.error)
-    ws.on('message', data => {
-        const message = JSON.parse(data);
-    })
-    ws.send(JSON.stringify({ type: 'list', data: result }))
-})
 
-process.on("exit", ()=> wss.close())
+
+
 
 function verbose (...params) {
     if (options.verbose) {
@@ -46,10 +63,10 @@ function save (context, data) {
 
 const spider = (()=>{
     
-    const q = async.queue(({url, name, extParams, $errorTimes = 1}, cb)=>{
+    const q = async.queue(({url, name = '', $errorTimes = 1, params = {}}, cb)=>{
         async function temp () {
 
-            verbose(options.javascript ? 'puppeteer ' : '', `正在爬取 ${JSON.stringify(url)}`)
+            console.log(options.javascript ? 'puppeteer ' : '', `正在爬取 ${JSON.stringify(url)}`)
             let dom
             let $
             let body
@@ -89,7 +106,7 @@ const spider = (()=>{
                 }
             } catch (e) {
                 console.error(`${url} 出现错误 ${e.message ? e.message : e},现在尝试重新获取,3次后抛弃请求`, ` —— 第${$errorTimes}次`)
-                $errorTimes < 3 && q.push({url, extParams, $errorTimes: ++$errorTimes})
+                $errorTimes < 3 && q.push({url, params, $errorTimes: ++$errorTimes})
                 cb()
                 return
             }
@@ -102,7 +119,7 @@ const spider = (()=>{
                 cb()
                 return
             }
-            const context = { $, dom, fetch: spider.fetch.bind(spider), url, params: extParams, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
+            const context = lastContext = { $, dom, fetch: spider.fetch.bind(spider), url, params, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
             matchedSpider.forEach(i => {
                 let loop = i.spider.handler(context)
                 let data = loop.next()
@@ -120,19 +137,36 @@ const spider = (()=>{
     }, 2);
 
     q.drain = () => {
-        console.log('恭喜, 全部爬取完毕！')
-        const replServer = repl.start('> ')
-        Object.assign(replServer.context, {
-            result,
-            inject: `javascript:(function () { var script = document.createElement('script'); script.src="//cdn.bootcss.com/jquery/3.3.1/jquery.min.js"; document.body.appendChild(script);  })()`,
-            showTable () {
-                opn(`${path.join(__dirname, "./ui/element.html")}`)
-            },
-            watch () {
-
-            }
-        })
-        replServer.on('exit', ()=> browser && browser.close())
+        let isContinue
+        if (lastContext && indexSpider.spider.completed instanceof Function) {
+            indexSpider.spider.completed({ 
+                ...lastContext, 
+                fetch(...params){
+                    isContinue = true
+                    lastContext.fetch(...params)
+                }
+            })
+            lastContext = null
+        } 
+        
+        if (!isContinue) {
+            console.log('恭喜, 全部爬取完毕！')
+            let wss = initWss()
+            // wss.on('connection', function connection(ws) {
+            //     ws.send(JSON.stringify({ type: 'list', data: result }))
+            // })
+            const replServer = repl.start('> ')
+            Object.assign(replServer.context, {
+                result,
+                showTable () {
+                    opn(`${path.join(__dirname, "./ui/element.html")}`)
+                },
+                watch () {
+    
+                }
+            })
+            replServer.on('exit', ()=> browser && browser.close())
+        }
     };
 
     q.error = (error) => {
@@ -140,13 +174,14 @@ const spider = (()=>{
     }
 
     return {
-        async fetch ({url, name = 'index', extParams = {}}) {
+        // url,name
+        async fetch (params) {
             if (options.javascript && !browser) {
                 verbose(`正在启动 puppeteer`)
                 browser = await puppeteer.launch({ ignoreHTTPSErrors: true })
                 verbose(`启动 puppeteer 完成`)
             }
-            q.push({url, name, extParams});
+            q.push(params);
         }
     }
 })();
@@ -189,7 +224,7 @@ module.exports = async function (_options) {
             console.error(`您指定的${options.folder}并非为文件夹`)
             return
         }
-        let indexSpider = readDirSync(options.folder)
+        indexSpider = readDirSync(options.folder)
         if (indexSpider) {
             spider.fetch({ url: indexSpider.spider.url })
         } else  {
@@ -204,11 +239,11 @@ module.exports = async function (_options) {
             return
         }
         let spider = require(options.filename)
-        allSpiders.push({
+        indexSpider = {
             path: options.filename,
-            name: spider.name,
             spider: spider
-        })
+        }
+        allSpiders.push(indexSpider)
         spider.fetch({ url: spider.url, name: spider.spider.name })
     } else {
         console.error(`请指定 folder 或者 filename`)
