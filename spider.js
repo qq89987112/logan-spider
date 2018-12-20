@@ -38,7 +38,10 @@ let initWss = (()=>{
                 })
                 ws.send(JSON.stringify({ type: 'list', data: result }))
             })
-            process.on("exit", ()=> wss && wss.close())
+            process.on("exit", ()=> {
+                wss && wss.close()
+                browser && browser.close()
+            })
         }
         return wss
     }
@@ -46,7 +49,27 @@ let initWss = (()=>{
 
 
 
+let isInit
 
+async function init () {
+    if (isInit) return
+    isInit = true
+    if (options.javascript && !browser) {
+        verbose(`正在启动 puppeteer`)
+        browser = await puppeteer.launch({ headless: true, ignoreHTTPSErrors: true })
+        verbose(`启动 puppeteer 完成`)
+    }
+    initWss()
+    const replServer = repl.start('> ')
+    Object.assign(replServer.context, {
+        showTable () {
+            opn(`${path.join(__dirname, "./ui/element.html")}`)
+        },
+        watch () {
+
+        }
+    })
+}
 
 function verbose (...params) {
     if (options.verbose) {
@@ -65,7 +88,6 @@ const spider = (()=>{
     
     const q = async.queue(({url, name = '', $errorTimes = 1, params = {}}, cb)=>{
         async function temp () {
-
             console.log(options.javascript ? 'puppeteer ' : '', `正在爬取 ${JSON.stringify(url)}`)
             let dom
             let $
@@ -88,13 +110,22 @@ const spider = (()=>{
                     });
                     // await page.goto(url, { timeout: 3000000 }); // 5分钟
                     await page.goto(url);
-                    await new Promise((resolve, reject)=>{
-                        page.once('domcontentloaded', async () => {
-                            dom = new JSDOM(body = await page.content());
-                            $ = jQuery(dom.window);
-                            resolve()
-                        });
-                    })
+                    async function get (times = 1) {
+                        if (times > 3) {
+                            return false
+                        }
+                        dom = new JSDOM(body = await page.content());
+                        $ = jQuery(dom.window);
+                        if (!$("body").text()) {
+                            console.error(`获取到的页面：${url} 内容为空, 尝试等待, 第${times}次。三次后结束`)
+                            await page.waitFor(1000);
+                            return await get(++times)
+                        }
+                        return true
+                    }
+                    if (!await get()){
+                        throw '页面内容为空'
+                    }
                 } else {
                     await new Promise((resolve, reject) => {
                         request({url},(error, response, _body)=>{
@@ -157,21 +188,6 @@ const spider = (()=>{
         
         if (!isContinue) {
             console.log('恭喜, 全部爬取完毕！')
-            let wss = initWss()
-            // wss.on('connection', function connection(ws) {
-            //     ws.send(JSON.stringify({ type: 'list', data: result }))
-            // })
-            const replServer = repl.start('> ')
-            Object.assign(replServer.context, {
-                result,
-                showTable () {
-                    opn(`${path.join(__dirname, "./ui/element.html")}`)
-                },
-                watch () {
-    
-                }
-            })
-            replServer.on('exit', ()=> browser && browser.close())
         }
     };
 
@@ -182,15 +198,12 @@ const spider = (()=>{
     return {
         // url,name
         async fetch (params) {
-            if (options.javascript && !browser) {
-                verbose(`正在启动 puppeteer`)
-                browser = await puppeteer.launch({ headless: true, ignoreHTTPSErrors: true })
-                verbose(`启动 puppeteer 完成`)
-            }
+            await init()
             q.push(params);
         }
     }
 })();
+
 
 function readDirSync(_path) {
     let indexSpider
