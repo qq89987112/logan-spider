@@ -88,8 +88,13 @@ const spider = (()=>{
                     });
                     // await page.goto(url, { timeout: 3000000 }); // 5分钟
                     await page.goto(url);
-                    dom = new JSDOM(body = await page.content());
-                    $ = jQuery(dom.window);
+                    await new Promise((resolve, reject)=>{
+                        page.once('domcontentloaded', async () => {
+                            dom = new JSDOM(body = await page.content());
+                            $ = jQuery(dom.window);
+                            resolve()
+                        });
+                    })
                 } else {
                     await new Promise((resolve, reject) => {
                         request({url},(error, response, _body)=>{
@@ -107,6 +112,7 @@ const spider = (()=>{
             } catch (e) {
                 console.error(`${url} 出现错误 ${e.message ? e.message : e},现在尝试重新获取,3次后抛弃请求`, ` —— 第${$errorTimes}次`)
                 $errorTimes < 3 && q.push({url, params, $errorTimes: ++$errorTimes})
+                page && page.close()
                 cb()
                 return
             }
@@ -119,7 +125,7 @@ const spider = (()=>{
                 cb()
                 return
             }
-            const context = lastContext = { $, dom, fetch: spider.fetch.bind(spider), url, params, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
+            const context = lastContext = { $, body, fetch: spider.fetch.bind(spider), url, params, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
             matchedSpider.forEach(i => {
                 let loop = i.spider.handler(context)
                 let data = loop.next()
@@ -178,7 +184,7 @@ const spider = (()=>{
         async fetch (params) {
             if (options.javascript && !browser) {
                 verbose(`正在启动 puppeteer`)
-                browser = await puppeteer.launch({ ignoreHTTPSErrors: true })
+                browser = await puppeteer.launch({ headless: true, ignoreHTTPSErrors: true })
                 verbose(`启动 puppeteer 完成`)
             }
             q.push(params);
@@ -226,7 +232,18 @@ module.exports = async function (_options) {
         }
         indexSpider = readDirSync(options.folder)
         if (indexSpider) {
-            spider.fetch({ url: indexSpider.spider.url })
+            const url = indexSpider.spider.url
+            if (url) {
+                spider.fetch({ url })
+            } else {
+                const context = { fetch: spider.fetch.bind(spider) }
+                let loop = indexSpider.spider.handler(context)
+                let data = loop.next()
+                while (data && !data.done) {
+                    save(context, data.value)
+                    data = loop.next()
+                }
+            }
         } else  {
             console.error(`文件夹${options.folder}下没有index.js`)
         }
