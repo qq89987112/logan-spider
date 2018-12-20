@@ -187,7 +187,7 @@
                             theme: 'vs-dark',
                             automaticLayout: true,
                             language: 'javascript',
-                            value: [
+                            value: localStorage.sort ? localStorage.sort : [
                               'function sort(a,b) {',
                               '\treturn a.$url.length - b.$url.length',
                               '}'
@@ -197,7 +197,9 @@
                             if (e.ctrlKey && e.keyCode == 49) {
                               e.preventDefault();
                               try {
-                                const _sort = eval(`${editor.getValue()}`)
+                                const sorStr = editor.getValue()
+                                const _sort = eval(`${sorStr}`)
+                                localStorage.sort = sorStr
                                 self.rightPanel.total = self.rightPanel.total.sort(sort)
                                 self.rightPanel.reLoad()
                               } catch (e) {

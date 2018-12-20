@@ -15,6 +15,7 @@ let lastContext
 let browser
 let options = {} 
 
+
 let initWss = (()=>{
     const wsSet = new Set()
     let wss
@@ -25,14 +26,14 @@ let initWss = (()=>{
             });
             wss.on("error", (...params) => {
                 wss = null
-                console.log(...params)
+                logger.log(...params)
             });
             wss.on("close", () => {
                 wss = null
             });
             wss.on('connection', function connection(ws) {
                 wsSet.add(ws)
-                ws.on("error", console.error)
+                ws.on("error", logger.error)
                 ws.on('message', data => {
                     const message = JSON.parse(data);
                 })
@@ -55,9 +56,9 @@ async function init () {
     if (isInit) return
     isInit = true
     if (options.javascript && !browser) {
-        verbose(`正在启动 puppeteer`)
+        logger.verbose(`正在启动 puppeteer`)
         browser = await puppeteer.launch({ headless: true, ignoreHTTPSErrors: true })
-        verbose(`启动 puppeteer 完成`)
+        logger.verbose(`启动 puppeteer 完成`)
     }
     initWss()
     const replServer = repl.start('> ')
@@ -71,11 +72,24 @@ async function init () {
     })
 }
 
-function verbose (...params) {
-    if (options.verbose) {
-        console.log(...params)
+const logger = {
+    verbose (...params) {
+        if (options.verbose) {
+            logger.log(...params)
+        }
+    },
+    log (...params) {
+        if (!options.silent) {
+            logger.log(...params)
+        }
+    },
+    error (...params) {
+        if (!options.silent) {
+            logger.error(...params)
+        }
     }
 }
+
 
 function save (context, data) {
     if (data && data.$type) {
@@ -88,7 +102,8 @@ const spider = (()=>{
     
     const q = async.queue(({url, name = '', $errorTimes = 1, params = {}}, cb)=>{
         async function temp () {
-            console.log(options.javascript ? 'puppeteer ' : '', `正在爬取 ${JSON.stringify(url)}`)
+            logger.log(options.javascript ? 'puppeteer ' : '', `正在爬取 ${JSON.stringify(url)}`)
+            isContinue = true
             let dom
             let $
             let body
@@ -102,7 +117,7 @@ const spider = (()=>{
                         const ui = [".css", ".jpg", ".png"]
                         const domain = ["google"]
                         if (ui.find(i => rurl.endsWith(i)) || domain.find(i => rurl.indexOf(i) > -1)) {
-                            verbose(`已经终止 ${rurl} 的请求`)
+                            logger.verbose(`已经终止 ${rurl} 的请求`)
                             request.abort().catch(()=>{})
                         } else {
                             request.continue().catch(()=>{})
@@ -117,7 +132,7 @@ const spider = (()=>{
                         dom = new JSDOM(body = await page.content());
                         $ = jQuery(dom.window);
                         if (!$("body").text()) {
-                            console.error(`获取到的页面：${url} 内容为空, 尝试等待, 第${times}次。三次后结束`)
+                            logger.error(`获取到的页面：${url} 内容为空, 尝试等待, 第${times}次。三次后结束`)
                             await page.waitFor(1000);
                             return await get(++times)
                         }
@@ -141,17 +156,17 @@ const spider = (()=>{
                     })
                 }
             } catch (e) {
-                console.error(`${url} 出现错误 ${e.message ? e.message : e},现在尝试重新获取,3次后抛弃请求`, ` —— 第${$errorTimes}次`)
+                logger.error(`${url} 出现错误 ${e.message ? e.message : e},现在尝试重新获取,3次后抛弃请求`, ` —— 第${$errorTimes}次`)
                 $errorTimes < 3 && q.push({url, params, $errorTimes: ++$errorTimes})
                 page && page.close()
                 cb()
                 return
             }
     
-            verbose(`${url} 下载完成, 内容：${body.slice(0, 50)}`)
+            logger.verbose(`${url} 下载完成, 内容：${body.slice(0, 50)}`)
             let matchedSpider = allSpiders.filter(i => !name || name === i.spider.name)
             if (name && !matchedSpider.length) {
-                console.error(`无匹配的spider：${name}`)
+                logger.error(`无匹配的spider：${name}`)
                 page && page.close()
                 cb()
                 return
@@ -173,23 +188,19 @@ const spider = (()=>{
 
     }, 2);
 
-    q.drain = () => {
-        let isContinue
-        if (lastContext && indexSpider.spider.completed instanceof Function) {
-            indexSpider.spider.completed({ 
-                ...lastContext, 
-                fetch(...params){
-                    isContinue = true
-                    lastContext.fetch(...params)
+    q.drain = (()=>{
+        return () => {
+            if (lastContext && indexSpider.spider.completed instanceof Function) {
+                indexSpider.spider.completed(lastContext)
+                lastContext = null
+            }
+            setTimeout(() => {
+                if (!q.length) {
+                    logger.log('恭喜, 全部爬取完毕！')
                 }
-            })
-            lastContext = null
-        } 
-        
-        if (!isContinue) {
-            console.log('恭喜, 全部爬取完毕！')
-        }
-    };
+            }, 1500)
+        };
+    })()
 
     q.error = (error) => {
         console.trace(error)
@@ -236,11 +247,11 @@ module.exports = async function (_options) {
         // 可以是项目相对路径 or 绝对路径
         options.folder = path.resolve(__dirname, options.folder)
         if (!fs.existsSync(options.folder)) {
-            console.error(`非法地址: ${options.folder}`)
+            logger.error(`非法地址: ${options.folder}`)
             return
         }
         if (!fs.statSync(options.folder).isDirectory()) {
-            console.error(`您指定的${options.folder}并非为文件夹`)
+            logger.error(`您指定的${options.folder}并非为文件夹`)
             return
         }
         indexSpider = readDirSync(options.folder)
@@ -258,14 +269,14 @@ module.exports = async function (_options) {
                 }
             }
         } else  {
-            console.error(`文件夹${options.folder}下没有index.js`)
+            logger.error(`文件夹${options.folder}下没有index.js`)
         }
 
     } else if (options.filename) {
         options.filename = path.resolve(__dirname, options.filename)
 
         if (!fs.existsSync(options.filename)) {
-            console.error(`非法地址: ${options.filename}`)
+            logger.error(`非法地址: ${options.filename}`)
             return
         }
         let spider = require(options.filename)
@@ -276,6 +287,6 @@ module.exports = async function (_options) {
         allSpiders.push(indexSpider)
         spider.fetch({ url: spider.url, name: spider.spider.name })
     } else {
-        console.error(`请指定 folder 或者 filename`)
+        logger.error(`请指定 folder 或者 filename`)
     }
 }
