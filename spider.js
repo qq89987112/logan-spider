@@ -76,17 +76,17 @@ async function init () {
 const logger = {
     verbose (...params) {
         if (options.verbose) {
-            logger.log(...params)
+            console.log(...params)
         }
     },
     log (...params) {
         if (!options.silent) {
-            logger.log(...params)
+            console.log(...params)
         }
     },
     error (...params) {
         if (!options.silent) {
-            logger.error(...params)
+            console.error(...params)
         }
     }
 }
