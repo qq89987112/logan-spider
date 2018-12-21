@@ -1,0 +1,88 @@
+<html>
+
+<head>
+    <meta charset='UTF-8'>
+    </meta>
+    <link rel='stylesheet' , href='./reset.css'>
+    <link rel='stylesheet' , href='../node_modules/element-ui/lib/theme-chalk/index.css'>
+    <link rel='stylesheet' href='../node_modules/monaco-editor/min/vs/editor/editor.main.css' />
+    <style>
+        #app {
+            /* padding: 10px; */
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .line2 {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: break-all;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <el-row type="flex" justify="space-between" align="middle" style="width: 100%" :gutter="20">
+            <el-col :span="12">
+                <div id="editor" style="height: 100vh"></div>
+            </el-col>
+            <el-col :span="12">
+                <div id="chart" style="height: 100vh"></div>
+            </el-col>
+        </el-row>
+    </div>
+    <script src='../node_modules/echarts/dist/echarts.min.js'></script>
+    <script src='../node_modules/vue/dist/vue.min.js'></script>
+    <script src='../node_modules/element-ui/lib/index.js'></script>
+    <script src='../node_modules/monaco-editor/min/vs/loader.js'></script>
+    <script>
+        new Vue({
+            el: "#app",
+            data() {
+                return {}
+            },
+            mounted() {
+                const myChart = echarts.init(document.getElementById('chart'))
+                const self = this
+                require.config({
+                  paths: {
+                    'vs': '../node_modules/monaco-editor/min/vs'
+                  }
+                });
+                require(['vs/editor/editor.main'], function() {
+                  const editor = self.editor = monaco.editor.create(document.getElementById('editor'), {
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    language: 'javascript',
+                    value: localStorage.chart ? localStorage.chart : [
+                      'function chart({ _, data }) {',
+                      '\treturn {}',
+                      '}'
+                    ].join('\n')
+                  });
+                  editor.onKeyDown(e => {
+                    if (e.ctrlKey && e.keyCode == 49) {
+                        e.preventDefault();
+                        try {
+                            const chartStr = editor.getValue()
+                            const _chart = (new Function(`return ${chartStr}`))()
+                            localStorage.chart = chartStr
+                            myChart.setOption(_chart({}), true)
+                        } catch (e) {
+                            console.error(e)
+                            self.$notify({ type: "error", message: e.message })
+                        }
+                    }
+                  })
+                });
+            },
+            methods: {}
+        })
+    </script>
+</body>
+
+</html>

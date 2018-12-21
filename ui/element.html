@@ -198,13 +198,13 @@
                               e.preventDefault();
                               try {
                                 const sorStr = editor.getValue()
-                                const _sort = eval(`${sorStr}`)
+                                const _sort = (new Function(`return ${sorStr}`))()
                                 localStorage.sort = sorStr
-                                self.rightPanel.total = self.rightPanel.total.sort(sort)
+                                self.rightPanel.total = self.rightPanel.total.sort(_sort())
                                 self.rightPanel.reLoad()
                               } catch (e) {
-                                    console.error(e)
-                                    self.$notify({ type: "error", message: e.message })
+                                console.error(e)
+                                self.$notify({ type: "error", message: e.message })
                               }
                             }
                           })

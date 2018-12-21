@@ -66,9 +66,9 @@ async function init () {
         showTable () {
             opn(`${path.join(__dirname, "./ui/element.html")}`)
         },
-        watch () {
-
-        }
+        showChart () {
+            opn(`${path.join(__dirname, "./ui/echart.html")}`)
+        },
     })
 }
 
