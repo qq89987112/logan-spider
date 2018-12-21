@@ -61,15 +61,16 @@ async function init () {
         logger.verbose(`启动 puppeteer 完成`)
     }
     initWss()
-    const replServer = repl.start('> ')
-    Object.assign(replServer.context, {
-        showTable () {
-            opn(`${path.join(__dirname, "./ui/element.html")}`)
-        },
-        showChart () {
-            opn(`${path.join(__dirname, "./ui/echart.html")}`)
-        },
-    })
+    // 相关操作变成 spider 的指令
+    // const replServer = repl.start('> ')
+    // Object.assign(replServer.context, {
+    //     showTable () {
+    //         opn(`${path.join(__dirname, "./ui/element.html")}`)
+    //     },
+    //     showChart () {
+    //         opn(`${path.join(__dirname, "./ui/echart.html")}`)
+    //     },
+    // })
 }
 
 const logger = {
