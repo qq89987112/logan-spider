@@ -69,17 +69,28 @@
                             <el-input v-model="item.tableSearch[key]"></el-input>
                         </el-form-item>
                         <el-form-item>
-                            <el-button @click="rightPanel = item">排序</el-button>
+                            <el-button :type="dataOperation.indexOf('sort') > -1 && 'primary'" @click="onSortClick(item)">排序</el-button>
+                            <el-button :type="dataOperation.indexOf('filter') > -1 && 'primary'" @click="onFilterClick(item)">过滤</el-button>
                             <el-button @click="item.reLoad">查询</el-button>
                         </el-form-item>
                     </el-form>
                     <el-table size="mini" border :data="item.children">
                         <el-table-column :prop="key" :label="key" v-for="key in item.keys">
                             <template slot-scope="props">
-                                <el-popover placement="bottom" trigger="hover">
+                                <el-popover placement="right" trigger="hover">
                                   <pre style="max-height: 95vh; overflow-y: auto">{{props.row[key]}}</pre>
-                                  <div class="line2" slot="reference">{{props.row[key]}}</div>
+                                  <template slot="reference">
+                                    <a class="line2" target="_blank" :href="props.row[key]" v-if="isLink(props.row[key])">{{props.row[key]}}</a>
+                                    <div v-else class="line2">{{props.row[key]}}</div>
+                                  </template>
                                 </el-popover>
+                            </template>
+                        </el-table-column>
+                        <el-table-column label="操作">
+                            <template slot-scope="props">
+                                <el-button-group>
+                                    <el-button @click="showOriginData(props.row)">原始数据</el-button>
+                                </el-button-group>
                             </template>
                         </el-table-column>
                     </el-table>
@@ -90,6 +101,13 @@
             <div class="animation-right-enter" :class="rightPanel && 'active'">
                 <div id="editor" style="height: 100%"></div>
             </div>
+            <el-dialog :title="modal.title" :visible.sync="modal.show">
+                <pre>{{modal.data}}</pre>
+                <span slot="footer" class="dialog-footer">
+                    <el-button size="small" v-if="modal.onCancel" @click="modal.onCancel">取 消</el-button>
+                    <el-button size="small" v-if="modal.onSubmit" type="primary" @click="modal.onSubmit">确 定</el-button>
+                </span>
+            </el-dialog>
         </div>
         <script src='../node_modules/vue/dist/vue.min.js'></script>
         <script src='../node_modules/element-ui/lib/index.js'></script>
@@ -99,8 +117,10 @@
                 el: "#app",
                 data() {
                     return {
-                        list: {},
-                        rightPanel: false
+                        list: JSON.parse(localStorage.list || '{}'),
+                        rightPanel: false,
+                        modal: {},
+                        dataOperation: []
                     }
                 },
                 computed: {
@@ -115,7 +135,7 @@
                                 total: i[1],
                                 viewPage: 1,
                                 pageSize: 10,
-                                keys: i[1][0] ? Object.keys(i[1][0]).filter(i => i !== '$type') : [],
+                                keys: i[1][0] ? Object.keys(i[1][0]).filter(i => !i.startsWith('$')) : [],
                                 tableSearch: {},
                                 reLoad () {
                                     const filter = Object.entries(ret.tableSearch)
@@ -167,12 +187,24 @@
                         ws.onmessage = function(e) {
                             let message = JSON.parse(e.data);
                             console.log(`收到消息： `,message)
-                            if (message.type == 'list') {
-                                self.list = message.data
-                                self.$nextTick(()=>{
-                                    console.log(self.tabs)
-                                })
-                            }
+                            self.$confirm('收到了新的数据, 是否继续?', '提示', {
+                                confirmButtonText: '确定',
+                                cancelButtonText: '取消',
+                                type: 'warning'
+                            }).then(() => {
+                                if (message.type == 'list') {
+                                    self.list = message.data
+                                    localStorage.list = JSON.stringify(message.data)
+                                    self.$nextTick(()=>{
+                                        console.log(self.tabs)
+                                    })
+                                }
+                            }).catch(() => {
+                                // this.$message({
+                                //     type: 'info',
+                                //     message: '已取消删除'
+                                // });          
+                            });
                         }
                     },
                     initEditor () {
@@ -186,22 +218,14 @@
                           const editor = self.editor = monaco.editor.create(document.getElementById('editor'), {
                             theme: 'vs-dark',
                             automaticLayout: true,
-                            language: 'javascript',
-                            value: localStorage.sort ? localStorage.sort : [
-                              'function sort(a,b) {',
-                              '\treturn a.$url.length - b.$url.length',
-                              '}'
-                            ].join('\n')
+                            language: 'javascript'
                           });
                           editor.onKeyDown(e => {
                             if (e.ctrlKey && e.keyCode == 49) {
                               e.preventDefault();
                               try {
-                                const sorStr = editor.getValue()
-                                const _sort = (new Function(`return ${sorStr}`))()
-                                localStorage.sort = sorStr
-                                self.rightPanel.total = self.rightPanel.total.sort(_sort())
-                                self.rightPanel.reLoad()
+                                const value = editor.getValue()
+                                self.rightPanel.onKeep(value)
                               } catch (e) {
                                 console.error(e)
                                 self.$notify({ type: "error", message: e.message })
@@ -209,6 +233,49 @@
                             }
                           })
                         });
+                    },
+                    showOriginData(data){
+                        this.modal = {
+                            show: true,
+                            data: JSON.stringify(data, null, '  ')
+                        }
+                    },
+                    onSortClick (item) {
+                        const self = this
+                        this.editor.setValue(localStorage.sort ? localStorage.sort : [
+                              'function sort(a,b) {',
+                              '\treturn a.$url.length - b.$url.length',
+                              '}'
+                            ].join('\n'))
+                        this.rightPanel = {
+                            onKeep (value) {
+                                const _sort = (new Function(`return ${value}`))()
+                                localStorage.sort = value
+                                item.total = item.total.sort(_sort)
+                                item.reLoad()
+                                self.dataOperation.push('sort')
+                            }
+                        }
+                    },
+                    onFilterClick (item) {
+                        const self = this
+                        this.editor.setValue(localStorage.filter ? localStorage.filter : [
+                              'function filter(item) {',
+                              '\treturn item',
+                              '}'
+                            ].join('\n'))
+                        this.rightPanel = {
+                            onKeep (value) {
+                                const _filter = (new Function(`return ${value}`))()
+                                localStorage.filter = value
+                                item.total = item.total.filter(_filter)
+                                item.reLoad()
+                                self.dataOperation.push('filter')
+                            }
+                        }
+                    },
+                    isLink (str) {
+                        return str && str.startsWith && (str.startsWith('http://') || str.startsWith('https://'))
                     }
                 }
             })
