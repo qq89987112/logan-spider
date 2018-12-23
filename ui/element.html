@@ -268,8 +268,9 @@
                             onKeep (value) {
                                 const _filter = (new Function(`return ${value}`))()
                                 localStorage.filter = value
-                                item.total = item.total.filter(_filter)
-                                item.reLoad()
+                                item.filterd = item.filterd.filter(_filter)
+                                item.viewPage = 1
+                                item.updateData()
                                 self.dataOperation.push('filter')
                             }
                         }
