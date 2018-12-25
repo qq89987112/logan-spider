@@ -8,7 +8,6 @@ const beautify = require("js-beautify")
 const repl = require("repl")
 const puppeteer = require("puppeteer")
 const ws = require("ws").Server
-const opn = require("opn")
 const allSpiders = []
 const result = {}
 let lastContext
@@ -61,16 +60,6 @@ async function init () {
         logger.verbose(`启动 puppeteer 完成`)
     }
     initWss()
-    // 相关操作变成 spider 的指令
-    // const replServer = repl.start('> ')
-    // Object.assign(replServer.context, {
-    //     showTable () {
-    //         opn(`${path.join(__dirname, "./ui/element.html")}`)
-    //     },
-    //     showChart () {
-    //         opn(`${path.join(__dirname, "./ui/echart.html")}`)
-    //     },
-    // })
 }
 
 const logger = {
