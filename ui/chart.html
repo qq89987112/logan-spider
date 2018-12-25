@@ -11,6 +11,12 @@
             /* padding: 10px; */
             height: 100vh;
             overflow: hidden;
+            padding-top: 30px;
+            box-sizing: border-box;
+        }
+
+        .template-selector{
+            margin-top: -30px;
         }
 
         .line2 {
@@ -27,14 +33,23 @@
 <body>
     <div id="app">
         <el-row type="flex" justify="space-between" align="middle" style="width: 100%" :gutter="20">
+            <el-col :span="7">
+                <el-select size="mini" @change="onTemplateChange" class="template-selector" placeholder="请选择图表模版" style="width: 100%">
+                    <el-option v-for="item in snippets" :key="item.label" :label="item.label" :value="item.value"></el-option>
+                </el-select>
+            </el-col>
+        </el-row>
+        <el-row type="flex" justify="space-between" align="middle" style="width: 100%" :gutter="20">
             <el-col :span="12">
-                <div id="editor" style="height: 100vh"></div>
+                <div id="editor" style="height: 100%"></div>
             </el-col>
             <el-col :span="12">
-                <div id="chart" style="height: 100vh"></div>
+                <div id="chart" style="height: 100%"></div>
             </el-col>
         </el-row>
     </div>
+    <script src='./js/chart-snippets.js'></script>
+    <script src='./js/lodash.min.js'></script>
     <script src='../node_modules/echarts/dist/echarts.min.js'></script>
     <script src='../node_modules/vue/dist/vue.min.js'></script>
     <script src='../node_modules/element-ui/lib/index.js'></script>
@@ -43,44 +58,54 @@
         new Vue({
             el: "#app",
             data() {
-                return {}
+                return {
+                    snippets: window.snippets || [],
+                    data: JSON.parse(sessionStorage.data || '[]')
+                }
             },
             mounted() {
                 const myChart = echarts.init(document.getElementById('chart'))
                 const self = this
                 require.config({
-                  paths: {
-                    'vs': '../node_modules/monaco-editor/min/vs'
-                  }
-                });
-                require(['vs/editor/editor.main'], function() {
-                  const editor = self.editor = monaco.editor.create(document.getElementById('editor'), {
-                    theme: 'vs-dark',
-                    automaticLayout: true,
-                    language: 'javascript',
-                    value: localStorage.chart ? localStorage.chart : [
-                      'function chart({ _, data }) {',
-                      '\treturn {}',
-                      '}'
-                    ].join('\n')
-                  });
-                  editor.onKeyDown(e => {
-                    if (e.ctrlKey && e.keyCode == 49) {
-                        e.preventDefault();
-                        try {
-                            const chartStr = editor.getValue()
-                            const _chart = (new Function(`return ${chartStr}`))()
-                            localStorage.chart = chartStr
-                            myChart.setOption(_chart({}), true)
-                        } catch (e) {
-                            console.error(e)
-                            self.$notify({ type: "error", message: e.message })
-                        }
+                    paths: {
+                        'vs': '../node_modules/monaco-editor/min/vs'
                     }
-                  })
+                });
+                require(['vs/editor/editor.main'], function () {
+                    const editor = self.editor = monaco.editor.create(document.getElementById('editor'), {
+                        theme: 'vs-dark',
+                        automaticLayout: true,
+                        language: 'javascript',
+                        value: localStorage.chart ? localStorage.chart : [
+                            'function chart({ _, data }) {',
+                            '\treturn {}',
+                            '}'
+                        ].join('\n')
+                    });
+                    editor.onKeyDown(e => {
+                        if (e.ctrlKey && e.keyCode == 49) {
+                            e.preventDefault();
+                            try {
+                                const chartStr = editor.getValue()
+                                const _chart = (new Function(`return ${chartStr}`))()
+                                localStorage.chart = chartStr
+                                myChart.setOption(_chart({ _: window._ , data: self.data }), true)
+                            } catch (e) {
+                                console.error(e)
+                                self.$notify({
+                                    type: "error",
+                                    message: e.message
+                                })
+                            }
+                        }
+                    })
                 });
             },
-            methods: {}
+            methods: {
+                onTemplateChange(v){
+                    this.editor.setValue(v)
+                }
+            }
         })
     </script>
 </body>
