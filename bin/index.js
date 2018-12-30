@@ -3,11 +3,9 @@ const ui = require('../ui')
 const program = require('commander');
 const spider = require('../spider');
 
-program
-  .version('0.0.1')
 
 program
-  .command('spider')
+  .version('0.0.1')
   .description('爬虫')
   .option('-F, --folder [folder]', '读取整个文件夹作为,并启动 index.js')
   .option('-f, --filename [filename]', '读取单个文件,并启动')
@@ -30,3 +28,5 @@ program
   })
 
 program.parse(process.argv)
+
+spider(program)

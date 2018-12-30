@@ -56,7 +56,7 @@ async function init () {
     isInit = true
     if (options.javascript && !browser) {
         logger.verbose(`正在启动 puppeteer`)
-        browser = await puppeteer.launch({ headless: true, ignoreHTTPSErrors: true })
+        browser = await puppeteer.launch({ headless: options.headless, ignoreHTTPSErrors: true })
         logger.verbose(`启动 puppeteer 完成`)
     }
     initWss()
@@ -114,23 +114,10 @@ const spider = (()=>{
                         }
                     });
                     // await page.goto(url, { timeout: 3000000 }); // 5分钟
-                    await page.goto(url);
-                    async function get (times = 1) {
-                        if (times > 3) {
-                            return false
-                        }
-                        dom = new JSDOM(body = await page.content());
-                        $ = jQuery(dom.window);
-                        if (!$("body").text()) {
-                            logger.error(`获取到的页面：${url} 内容为空, 尝试等待, 第${times}次。三次后结束`)
-                            await page.waitFor(1000);
-                            return await get(++times)
-                        }
-                        return true
-                    }
-                    if (!await get()){
-                        throw '页面内容为空'
-                    }
+                    await page.goto(url, {waitUntil: 'networkidle2'});
+                    // await page.waitFor(1000);
+                    dom = new JSDOM(body = await page.content());
+                    $ = jQuery(dom.window);
                 } else {
                     await new Promise((resolve, reject) => {
                         request({url},(error, response, _body)=>{
@@ -161,15 +148,20 @@ const spider = (()=>{
                 cb()
                 return
             }
-            const context = lastContext = { $, body, fetch: spider.fetch.bind(spider), url, params, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
-            matchedSpider.forEach(i => {
+            const context = lastContext = { $, page, body, fetch: spider.fetch.bind(spider), url, params, beautify: { html: beautify.html, css: beautify.css, js: beautify.js } }
+            for (let index = 0; index < matchedSpider.length; index++) {
+                const i = matchedSpider[index];
+                if (i.spider.beforeEnter) {
+                    // @TODO 支持延迟控制
+                    await i.spider.beforeEnter(context)
+                }
                 let loop = i.spider.handler(context)
                 let data = loop.next()
                 while (data && !data.done) {
                     save(context, data.value)
                     data = loop.next()
                 }
-            })
+            }
             page && page.close()
             cb()
         }
@@ -214,7 +206,7 @@ function readDirSync(_path) {
             const addr = path.join(_path, ele);
             if (fs.statSync(addr).isDirectory()) {
                 readDirSync(addr);
-            } else {
+            } else if (path.extname(addr) === '.js'){
                 let spider = require(addr)
                 let spiderObj = {
                     path: addr,
@@ -233,6 +225,7 @@ function readDirSync(_path) {
 
 module.exports = async function (_options) {
     options = _options
+    options.headless = options.headless === undefined ? true : options.headless
     if (options.folder) {
         // 可以是项目相对路径 or 绝对路径
         options.folder = path.resolve(__dirname, options.folder)
